@@ -2,7 +2,7 @@ import { AIMessage, BaseMessage, createAgent, tool } from "langchain";
 import { ChatGroq } from "@langchain/groq";
 import z from "zod";
 import { app, botId } from "./core.js";
-import { readFile } from "fs/promises";
+import basePrompt from "./prompt.md"
 
 class Skip extends Error {}
 
@@ -16,6 +16,13 @@ const llm = new ChatGroq({
     model: "openai/gpt-oss-120b",
     temperature: 0.4,
 });
+
+function handle(err: any) {
+    if (err instanceof Error && err.message.includes("API error")) {
+        return `Slack API error: ${err.message}`;
+    }
+    throw err;
+}
 
 const skip = tool(
     function(_input) {
@@ -34,7 +41,7 @@ const getProfile = tool(
         try {
             const result = await app.client.users.info({ user: input.user_id });
             const profile = result.user?.profile;
-            if (!profile) return "No profile recieved";
+            if (!profile) return "No profile received";
             for (const key in profile) {
                 if (key.startsWith("image_")) {
                     delete profile[key as keyof typeof profile];
@@ -42,7 +49,7 @@ const getProfile = tool(
             }
             return profile;
         } catch(err) {
-            throw err;
+            return handle(err);
         }
     },
     {
@@ -56,20 +63,26 @@ const getProfile = tool(
 
 const sendDM = tool(
     async function(input) {
-        const response = await app.client.conversations.open({
-            users: input.user_id
-        });
-        const channel = response.channel?.id;
-        if (!channel) {
-            return "Couldn't open conversation";
+        try {
+            const response = await app.client.conversations.open({
+                users: input.user_id
+            });
+            const channel = response.channel?.id;
+            if (!channel) {
+                return "Couldn't open conversation";
+            }
+            for (const line of input.text.split("\n")){
+                if (!line) continue;
+                app.client.chat.postMessage({
+                    channel,
+                    text: line,
+                })
+            }
+            if (input.done) throw new Skip();
+            return "success";
+        } catch(err) {
+            return handle(err);
         }
-        for (const line of input.text.split("\n")){
-            app.client.chat.postMessage({
-                channel,
-                text: line,
-            })
-        }
-        if (input.done) throw new Skip();
     },
     {
         name: "send_direct_message",
@@ -77,28 +90,34 @@ const sendDM = tool(
         schema: z.object({
             user_id: z.string().describe(USER_ID_DESCRIPTION),
             text: z.string().describe(TEXT_DESCRIPTION),
-            done: z.boolean().default(false).describe(DONE_DESCRIPTION),
+            done: z.boolean().describe(DONE_DESCRIPTION),
         })
     }
 )
 
 const sendChannelMessage = tool(
     async function(input, config) {
-        const channel: string = config.configurable.channel;
-        for (const line of input.text.split("\n")) {
-            app.client.chat.postMessage({
-                channel,
-                text: line
-            })
+        try {
+            const channel: string = config.configurable.channel;
+            for (const line of input.text.split("\n")) {
+                if (!line) continue;
+                app.client.chat.postMessage({
+                    channel,
+                    text: line
+                });
+            }
+            if (input.done) throw new Skip();
+            return "success";
+        } catch(err) {
+            return handle(err);
         }
-        if (input.done) throw new Skip();
     },
     {
         name: "send_channel_message",
         description: "Send a top-level message in the current channel.",
         schema: z.object({
             text: z.string().describe(TEXT_DESCRIPTION),
-            done: z.boolean().default(false).describe(DONE_DESCRIPTION),
+            done: z.boolean().describe(DONE_DESCRIPTION),
         })
     }
 )
@@ -110,14 +129,15 @@ const tools = [
     sendChannelMessage,
 ]
 
-const prompt = (await readFile("prompt.md", "utf8"))
+const prompt = basePrompt
     .replaceAll("{BOT_ID}", botId)
     .replaceAll("{CREATOR}", process.env.CREATOR_ID
         ? ` You were created by the user with ID ${process.env.CREATOR_ID}.`
         : ""
     );
+// const prompt = "";
 
-export const agent = createAgent({
+const agent = createAgent({
     model: llm,
     tools,
     systemPrompt: prompt,

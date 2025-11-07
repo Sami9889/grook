@@ -1,0 +1,17 @@
+{
+    "$schema": "./node_modules/wrangler/config-schema.json",
+    "name": "grook",
+    "compatibility_date": "2025-11-06",
+    "main": "src/app.ts",
+    "vars": {
+        "CREATOR_ID": "U09EFB5G6TS",
+    },
+    "rules": [
+        {
+            "type": "Text",
+            "globs": ["**/*.md"],
+            "fallthrough": true,
+        }
+    ],
+    "compatibility_flags": [ "nodejs_compat" ],
+}
