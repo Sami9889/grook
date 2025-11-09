@@ -57,7 +57,7 @@ const getProfile = tool(
         description: "Get information about a user such as their name.",
         schema: z.object({
             user_id: z.string().describe(USER_ID_DESCRIPTION),
-        })
+        }),
     }
 );
 
@@ -91,7 +91,7 @@ const sendDM = tool(
             user_id: z.string().describe(USER_ID_DESCRIPTION),
             text: z.string().describe(TEXT_DESCRIPTION),
             done: z.boolean().describe(DONE_DESCRIPTION),
-        })
+        }),
     }
 )
 
@@ -118,7 +118,7 @@ const sendChannelMessage = tool(
         schema: z.object({
             text: z.string().describe(TEXT_DESCRIPTION),
             done: z.boolean().describe(DONE_DESCRIPTION),
-        })
+        }),
     }
 )
 

@@ -14,9 +14,9 @@ async function start(env: Record<string, any>) {
     })
 
     app.message(async function(data) {
-        console.log("Responding to message");
         const message = data.message;
         const client = data.client;
+        console.log("Responding to message:", message);
         async function getReplies() {
             try {
 
