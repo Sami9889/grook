@@ -59,12 +59,13 @@ async function start(env: Record<string, any>) {
         if (typeof text != "string") {
             throw new TypeError(`Expected string, got ${text}`)
         }
+        const thread_ts = message.subtype ? undefined : message.ts
         const say = data.say;
         for (const line of text.split("\n")) {
             if (!line) continue;
             await say({
                 channel: message.channel,
-                thread_ts: message.ts,
+                thread_ts,
                 text: line,
             });
         }
