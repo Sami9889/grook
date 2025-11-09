@@ -2,7 +2,7 @@ import { AIMessage, BaseMessage, createAgent, tool } from "langchain";
 import { ChatGroq } from "@langchain/groq";
 import z from "zod";
 import { app, botId } from "./core.js";
-import basePrompt from "./prompt.md"
+import basePrompt from "./prompt/prompt.md";
 
 class Skip extends Error {}
 
@@ -64,6 +64,7 @@ const getProfile = tool(
 const sendDM = tool(
     async function(input) {
         try {
+            console.log(`Sending '${input.text}' to ${input.user_id}`)
             const response = await app.client.conversations.open({
                 users: input.user_id
             });
