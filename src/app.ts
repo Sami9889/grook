@@ -16,10 +16,8 @@ async function start(env: Record<string, any>) {
     app.message(async function(data) {
         const message = data.message;
         const client = data.client;
-        console.log("Responding to message:", message);
+        console.log(message);
         async function getReplies() {
-            try {
-
             let ts = message.ts;
             if ("thread_ts" in message && message.thread_ts) {
                 ts = message.thread_ts;
@@ -29,11 +27,6 @@ async function start(env: Record<string, any>) {
                 channel: message.channel
             });
             return repliesData.messages ?? [];
-
-            } catch(err) {
-                console.log(err);
-                throw err;
-            }
         }
 
         const messages: BaseMessage[] = [];
@@ -47,6 +40,18 @@ async function start(env: Record<string, any>) {
                 ));
             }
         }
+        let thread_ts: string | undefined = message.ts;
+        switch (message.subtype) {
+            case undefined:
+                break;
+            case "channel_join":
+                thread_ts = undefined;
+                break;
+            default:
+                console.log(`Ignoring ${message.subtype}`);
+                return;
+        }
+        console.log(`Responding to ${message.subtype}`);
         const agentResult = await invoke(messages, {
             channel: message.channel
         });
@@ -59,7 +64,6 @@ async function start(env: Record<string, any>) {
         if (typeof text != "string") {
             throw new TypeError(`Expected string, got ${text}`)
         }
-        const thread_ts = message.subtype ? undefined : message.ts
         const say = data.say;
         for (const line of text.split("\n")) {
             if (!line) continue;
