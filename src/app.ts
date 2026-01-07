@@ -51,7 +51,9 @@ async function start(env: Record<string, any>) {
                 console.log(`Ignoring ${message.subtype}`);
                 return;
         }
-        console.log(`Responding to ${message.subtype}`);
+        if (message.subtype) {
+            console.log(`Responding to ${message.subtype}`);
+        }
         const agentResult = await invoke(messages, {
             channel: message.channel
         });

@@ -1,4 +1,5 @@
 import { AIMessage, BaseMessage, createAgent, tool } from "langchain";
+import { env } from "cloudflare:workers"
 import { ChatGroq } from "@langchain/groq";
 import z from "zod";
 import { app, botId } from "./core.js";
@@ -13,7 +14,7 @@ const DONE_DESCRIPTION = "If true, `skip` will be called after the message is \
 sent."
 
 const llm = new ChatGroq({
-    model: "openai/gpt-oss-120b",
+    model: env.GROQ_MODEL,
     temperature: 0.4,
 });
 
@@ -132,8 +133,8 @@ const tools = [
 
 const prompt = basePrompt
     .replaceAll("{BOT_ID}", botId)
-    .replaceAll("{CREATOR}", process.env.CREATOR_ID
-        ? ` You were created by the user with ID ${process.env.CREATOR_ID}.`
+    .replaceAll("{CREATOR}", env.CREATOR_ID
+        ? ` You were created by the user with ID ${env.CREATOR_ID}.`
         : ""
     );
 // const prompt = "";
