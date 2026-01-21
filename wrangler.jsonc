@@ -6,6 +6,7 @@
     "vars": {
         "GROQ_MODEL": "moonshotai/kimi-k2-instruct",
         "CREATOR_ID": "U09EFB5G6TS",
+        "ALLOWED_CHANNELS": "C09REGCDEA2,C0A21M6CWLU"
     },
     "rules": [
         {

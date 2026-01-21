@@ -2,9 +2,11 @@ import { AwsEventV2, AwsResponse } from "@slack/bolt/dist/receivers/AwsLambdaRec
 import { invoke } from "./ai.js";
 import { app, botId, init, receiver } from "./core.js";
 import { AIMessage, BaseMessage, HumanMessage } from "langchain";
+import { env } from "cloudflare:workers"
 
-async function start(env: Record<string, any>) {
-    await init(env);
+async function start() {
+    const ALLOWED_CHANNELS = new Set(env.ALLOWED_CHANNELS.split(","))
+    await init();
 
     //console.log("Starting");
 
@@ -15,6 +17,18 @@ async function start(env: Record<string, any>) {
 
     app.message(async function(data) {
         const message = data.message;
+        const say = data.say;
+        if (message.channel.startsWith("D") || ALLOWED_CHANNELS.has(message.channel)) {
+            console.log("Bad channel:", message.channel)
+            await say({
+                channel: message.channel,
+                text: `Ask <@${env.CREATOR_ID}> if you want Grook in this channel.`,
+            });
+            await app.client.conversations.leave({
+                channel: message.channel
+            });
+            return;
+        }
         const client = data.client;
         console.log(message);
         async function getReplies() {
@@ -66,7 +80,6 @@ async function start(env: Record<string, any>) {
         if (typeof text != "string") {
             throw new TypeError(`Expected string, got ${text}`)
         }
-        const say = data.say;
         for (const line of text.split("\n")) {
             if (!line) continue;
             console.log("Sending message:", line);
@@ -108,7 +121,7 @@ export default {
     async fetch(request: Request, env: Record<string, any>, _ctx: any) {
         const url = new URL(request.url);
         console.log(request.method, url.pathname);
-        await start(env);
+        await start();
         const handler = await receiver.start();
         return awsToResponse(await handler(await requestToAws(request), {}, () => {}));
     }
