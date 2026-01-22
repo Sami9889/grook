@@ -68,17 +68,13 @@ async function start() {
         if (message.subtype) {
             console.log(`Responding to ${message.subtype}`);
         }
-        const agentResult = await invoke(messages, {
+        const text = await invoke(messages, {
             channel: message.channel
         });
-        const text = agentResult.content;
         console.log("AI response:", text);
         const newReplies = await getReplies();
         if (!text || newReplies.length > replies.length) {
             console.log("Canceled");
-        }
-        if (typeof text != "string") {
-            throw new TypeError(`Expected string, got ${text}`)
         }
         for (const line of text.split("\n")) {
             if (!line) continue;

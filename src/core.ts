@@ -16,3 +16,9 @@ export async function init() {
     const authResponse = await app.client.auth.test();
     botId = authResponse.user_id ?? "";
 }
+
+export function assertString(data: unknown): asserts data is string {
+    if (typeof data != "string") {
+        throw new TypeError("")
+    }
+}

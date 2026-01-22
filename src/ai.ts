@@ -1,9 +1,10 @@
-import { AIMessage, BaseMessage, createAgent, tool } from "langchain";
+import { AIMessage, BaseMessage, HumanMessage, createAgent, tool } from "langchain";
 import { env } from "cloudflare:workers"
 import { ChatGroq } from "@langchain/groq";
 import z from "zod";
-import { app, botId } from "./core.js";
+import { app, assertString, botId } from "./core.js";
 import basePrompt from "./prompt/prompt.md";
+import safeguardPrompt from "./safeguard-prompt.md";
 
 class Skip extends Error {}
 
@@ -16,6 +17,11 @@ sent."
 const llm = new ChatGroq({
     model: env.GROQ_MODEL,
     temperature: 0.4,
+});
+
+const llmSafeguard = new ChatGroq({
+    model: env.GROQ_SAFEGUARD_MODEL,
+    temperature: 0,
 });
 
 function handle(err: any) {
@@ -65,6 +71,7 @@ const getProfile = tool(
 const sendDM = tool(
     async function(input) {
         try {
+            input.text = await safeguard(input.text);
             console.log(`Sending '${input.text}' to ${input.user_id}`)
             const response = await app.client.conversations.open({
                 users: input.user_id
@@ -137,7 +144,6 @@ const prompt = basePrompt
         ? ` You were created by the user with ID ${env.CREATOR_ID}.`
         : ""
     );
-// const prompt = "";
 
 const agent = createAgent({
     model: llm,
@@ -145,20 +151,41 @@ const agent = createAgent({
     systemPrompt: prompt,
 });
 
+const agentSafeguard = createAgent({
+    model: llmSafeguard,
+    systemPrompt: safeguardPrompt,
+});
+
+async function safeguard(message: string): Promise<string> {
+    const result = await agentSafeguard.invoke({ messages: [new HumanMessage(message)] });
+    const lastMessage = result.messages.at(-1);
+    if (!(lastMessage instanceof AIMessage)) {
+        throw new TypeError(`Expected AIMessage, got ${lastMessage}`);
+    }
+    const response = lastMessage.content;
+    assertString(response);
+    if (response.trim().toLowerCase() == "safe") {
+        return message
+    }
+    console.log(`Blocked ${message}: ${response}`)
+    return "This message was blocked by the content filter";
+}
+
 export async function invoke(
     messages: BaseMessage[],
     configurable: Record<string, any> = {}
-): Promise<AIMessage> {
+): Promise<string> {
     try {
         const result = await agent.invoke({ messages }, { configurable });
         const lastMessage = result.messages.at(-1);
         if (lastMessage instanceof AIMessage) {
-            return lastMessage
+            assertString(lastMessage.content);
+            return await safeguard(lastMessage.content);
         }
         throw new TypeError(`Expected AIMessage, got ${lastMessage}`);
     } catch(err) {
         if (err instanceof Skip) {
-            return new AIMessage("");
+            return "";
         }
         throw err;
     } 
