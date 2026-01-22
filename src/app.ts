@@ -18,7 +18,7 @@ async function start() {
     app.message(async function(data) {
         const message = data.message;
         const say = data.say;
-        if (message.channel.startsWith("D") || ALLOWED_CHANNELS.has(message.channel)) {
+        if (!(message.channel.startsWith("D") || ALLOWED_CHANNELS.has(message.channel))) {
             console.log("Bad channel:", message.channel)
             await say({
                 channel: message.channel,
