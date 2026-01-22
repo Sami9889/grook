@@ -4,7 +4,7 @@ import { ChatGroq } from "@langchain/groq";
 import z from "zod";
 import { app, assertString, botId } from "./core.js";
 import basePrompt from "./prompt/prompt.md";
-import safeguardPrompt from "./safeguard-prompt.md";
+import safeguardPrompt from "./prompt/safeguard.md";
 
 class Skip extends Error {}
 
