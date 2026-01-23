@@ -1,4 +1,4 @@
-import { AIMessage, BaseMessage, HumanMessage, createAgent, tool } from "langchain";
+import { AIMessage, BaseMessage, HumanMessage, SystemMessage, createAgent, tool } from "langchain";
 import { env } from "cloudflare:workers"
 import { ChatGroq } from "@langchain/groq";
 import z from "zod";
@@ -24,7 +24,13 @@ const llmSafeguard = new ChatGroq({
     temperature: 0,
 });
 
+function error(message: string): string {
+    console.log("Tool error:", message);
+    return message;
+}
+
 function handle(err: any) {
+    console.error(err);
     if (err instanceof Error && err.message.includes("API error")) {
         return `Slack API error: ${err.message}`;
     }
@@ -48,7 +54,7 @@ const getProfile = tool(
         try {
             const result = await app.client.users.info({ user: input.user_id });
             const profile = result.user?.profile;
-            if (!profile) return "No profile received";
+            if (!profile) return error("No profile received");
             for (const key in profile) {
                 if (key.startsWith("image_")) {
                     delete profile[key as keyof typeof profile];
@@ -71,6 +77,9 @@ const getProfile = tool(
 const sendDM = tool(
     async function(input) {
         try {
+            if (!input.text.match(/<@u[a-z0-9]{10}>/gi)) {
+                return error("Text must mention the person who requested the DM")
+            }
             input.text = await safeguard(input.text);
             console.log(`Sending '${input.text}' to ${input.user_id}`)
             const response = await app.client.conversations.open({
@@ -78,7 +87,7 @@ const sendDM = tool(
             });
             const channel = response.channel?.id;
             if (!channel) {
-                return "Couldn't open conversation";
+                return error("Couldn't open conversation - are you sure that user exists?");
             }
             for (const line of input.text.split("\n")){
                 if (!line) continue;
@@ -175,8 +184,34 @@ export async function invoke(
     messages: BaseMessage[],
     configurable: Record<string, any> = {}
 ): Promise<string> {
+    const userIDs: Record<string, string> = {};
+    for (const message of messages) {
+        assertString(message.content);
+        const matches = message.content.match(/u[a-z0-9]{10}/gi) ?? [];
+        for (let match of matches) {
+            match = match.toUpperCase();
+            if (match in userIDs) {
+                continue;
+            }
+            const result = await app.client.users.info({ user: match });
+            if (!result.user) {
+                userIDs[match] = "unknown/nonexistent";
+                continue;
+            };
+            const profile = result.user.profile;
+            userIDs[match] = profile.display_name || profile.real_name;
+        }
+    }
+    console.log("Relevant users:", userIDs)
+    let prompt = "Relevant IDs (U = User):\n";
+    for (const [key, value] of Object.entries(userIDs)) {
+        prompt += `${key}: ${value}\n`
+    }
+    const addedMessage = new SystemMessage(prompt);
     try {
-        const result = await agent.invoke({ messages }, { configurable });
+        const result = await agent.invoke({
+            messages: messages.concat([addedMessage])
+        }, { configurable });
         const lastMessage = result.messages.at(-1);
         if (lastMessage instanceof AIMessage) {
             assertString(lastMessage.content);
