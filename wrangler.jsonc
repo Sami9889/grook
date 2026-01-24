@@ -4,7 +4,7 @@
     "compatibility_date": "2025-11-06",
     "main": "src/app.ts",
     "vars": {
-        "GROQ_MODEL": "moonshotai/kimi-k2-instruct",
+        "GROQ_MODEL": "moonshotai/kimi-k2-instruct-0905",
         "GROQ_SAFEGUARD_MODEL": "openai/gpt-oss-20b",
         "CREATOR_ID": "U09EFB5G6TS",
         "ALLOWED_CHANNELS": "C09REGCDEA2,C0A21M6CWLU",
