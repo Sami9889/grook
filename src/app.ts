@@ -65,6 +65,10 @@ async function start() {
                 console.log(`Ignoring ${message.subtype}`);
                 return;
         }
+        if ("bot_id" in message) {
+            console.log("Ignoring bot message");
+            return;
+        }
         if (message.subtype) {
             console.log(`Responding to ${message.subtype}`);
         }
