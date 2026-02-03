@@ -4,6 +4,7 @@
 		"@langchain/core": "^1.1.16",
 		"@langchain/groq": "^1.0.0",
 		"@slack/bolt": "^4.6.0",
+		"@slack/web-api": "^7.13.0",
 		"langchain": "^1.0.3",
 		"zod": "^4.1.12"
 	},

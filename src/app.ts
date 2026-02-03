@@ -2,7 +2,10 @@ import { AwsEventV2, AwsResponse } from "@slack/bolt/dist/receivers/AwsLambdaRec
 import { invoke } from "./ai.js";
 import { app, botId, init, receiver } from "./core.js";
 import { AIMessage, BaseMessage, HumanMessage } from "langchain";
-import { env } from "cloudflare:workers"
+import { env } from "cloudflare:workers";
+import { client } from "./core.js";
+import { GenericMessageEvent } from "@slack/web-api";
+import { MessageElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse.js";
 
 async function start() {
     const ALLOWED_CHANNELS = new Set(env.ALLOWED_CHANNELS.split(","))
@@ -19,17 +22,18 @@ async function start() {
         const message = data.message;
         const say = data.say;
         if (!(message.channel.startsWith("D") || ALLOWED_CHANNELS.has(message.channel))) {
-            console.log("Bad channel:", message.channel)
-            await say({
+            console.log("Bad channel:", message.channel);
+            if (message.subtype) return;
+            await client.chat.postEphemeral({
                 channel: message.channel,
+                user: (message as GenericMessageEvent).user,
                 text: `Ask <@${env.CREATOR_ID}> if you want Grook in this channel.`,
             });
-            await app.client.conversations.leave({
+            await client.conversations.leave({
                 channel: message.channel
             });
             return;
         }
-        const client = data.client;
         console.log(message);
         async function getReplies() {
             let ts = message.ts;
@@ -43,17 +47,6 @@ async function start() {
             return repliesData.messages ?? [];
         }
 
-        const messages: BaseMessage[] = [];
-        const replies = await getReplies();
-        for (const reply of replies) {
-            if (reply.user == botId) {
-                messages.push(new AIMessage(reply.text ?? ""));
-            } else {
-                messages.push(new HumanMessage(
-                    `User ID ${reply.user}: ${reply.text}`
-                ));
-            }
-        }
         let thread_ts: string | undefined = message.ts;
         switch (message.subtype) {
             case undefined:
@@ -65,6 +58,21 @@ async function start() {
                 console.log(`Ignoring ${message.subtype}`);
                 return;
         }
+        const messages: BaseMessage[] = [];
+        const replies = await getReplies();
+        if (replies.at(-1).user == botId) {
+            console.log("Canceled");
+            return;
+        }
+        for (const reply of replies) {
+            if (reply.user == botId) {
+                messages.push(new AIMessage(reply.text ?? ""));
+            } else {
+                messages.push(new HumanMessage(
+                    `User ID ${reply.user}: ${reply.text}`
+                ));
+            }
+        }
         if (message.subtype) {
             console.log(`Responding to ${message.subtype}`);
         }
@@ -73,8 +81,9 @@ async function start() {
         });
         console.log("AI response:", text);
         const newReplies = await getReplies();
-        if (!text || newReplies.length > replies.length) {
+        if (!text || replies.at(-1).ts != newReplies.at(-1).ts) {
             console.log("Canceled");
+            return;
         }
         for (const line of text.split("\n")) {
             if (!line) continue;

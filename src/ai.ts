@@ -1,14 +1,17 @@
 import { AIMessage, BaseMessage, HumanMessage, SystemMessage, createAgent, tool } from "langchain";
+import { ConversationsInfoResponse, UsersInfoResponse } from "@slack/web-api";
 import { env } from "cloudflare:workers"
 import { ChatGroq } from "@langchain/groq";
 import z from "zod";
-import { app, assertString, botId } from "./core.js";
+import { assertString, botId } from "./core.js";
 import basePrompt from "./prompt/prompt.md";
 import safeguardPrompt from "./prompt/safeguard.md";
+import { client } from "./core.js";
 
 class Skip extends Error {}
 
-const USER_ID_DESCRIPTION = "The user's member ID. Example: U12345ABCDE";
+const USER_ID_DESCRIPTION = "The user's member ID, or a comma-separated list of \
+them. Example: U12345ABCDE,U67890FGHIJ";
 const TEXT_DESCRIPTION = "The message text. To send multiple messages at once, \
 place them on separate lines. Example: 'Hello, world!'";
 const DONE_DESCRIPTION = "If true, `skip` will be called after the message is \
@@ -52,7 +55,7 @@ to the user.",
 const getProfile = tool(
     async function(input) {
         try {
-            const result = await app.client.users.info({ user: input.user_id });
+            const result = await client.users.info({ user: input.user_id });
             const profile = result.user?.profile;
             if (!profile) return error("No profile received");
             for (const key in profile) {
@@ -82,7 +85,7 @@ const sendDM = tool(
             }
             input.text = await safeguard(input.text);
             console.log(`Sending '${input.text}' to ${input.user_id}`)
-            const response = await app.client.conversations.open({
+            const response = await client.conversations.open({
                 users: input.user_id
             });
             const channel = response.channel?.id;
@@ -91,7 +94,7 @@ const sendDM = tool(
             }
             for (const line of input.text.split("\n")){
                 if (!line) continue;
-                app.client.chat.postMessage({
+                client.chat.postMessage({
                     channel,
                     text: line,
                 })
@@ -119,7 +122,7 @@ const sendChannelMessage = tool(
             const channel: string = config.configurable.channel;
             for (const line of input.text.split("\n")) {
                 if (!line) continue;
-                app.client.chat.postMessage({
+                client.chat.postMessage({
                     channel,
                     text: line
                 });
@@ -137,6 +140,20 @@ const sendChannelMessage = tool(
             text: z.string().describe(TEXT_DESCRIPTION),
             done: z.boolean().describe(DONE_DESCRIPTION),
         }),
+    }
+)
+
+const react = tool(
+    async function(input, config) {},
+    {
+        name: "react",
+        description: "React to the most recent message.",
+        schema: z.object({
+            name: z.array(z.string()).min(1).nonempty().describe(
+                "The reaction(s) to add to the message (without surrounding colons)."
+            ),
+            done: z.boolean().describe(DONE_DESCRIPTION)
+        })
     }
 )
 
@@ -182,29 +199,51 @@ async function safeguard(message: string): Promise<string> {
 
 export async function invoke(
     messages: BaseMessage[],
-    configurable: Record<string, any> = {}
+    configurable: { channel: string }
 ): Promise<string> {
-    const userIDs: Record<string, string> = {};
+    const channel = configurable.channel.toUpperCase();
+    const relevantIDs: Record<string, string> = {};
     for (const message of messages) {
         assertString(message.content);
-        const matches = message.content.match(/u[a-z0-9]{10}/gi) ?? [];
+        const matches: string[] = message.content.match(/\b(u|c|d)[a-z0-9]{10}\b/gi) ?? [];
+        if (!(channel in relevantIDs)) {
+            matches.push(channel);
+        }
         for (let match of matches) {
             match = match.toUpperCase();
-            if (match in userIDs) {
+            if (match in relevantIDs) {
                 continue;
             }
-            const result = await app.client.users.info({ user: match });
-            if (!result.user) {
-                userIDs[match] = "unknown/nonexistent";
+            if (match.startsWith("C") || match.startsWith("D")) {
+                let result: ConversationsInfoResponse;
+                try {
+                    result = await client.conversations.info({ channel: match });
+                } catch (err) {
+                    console.error(err);
+                    relevantIDs[match] = "unknown/nonexistent/private";
+                    continue;
+                }
+                if (match == channel) {
+                    match += " (current channel)";
+                }
+                relevantIDs[match] = result.channel.name ?? "direct message";
+                continue;
+            }
+            let result: UsersInfoResponse;
+            try {
+                result = await client.users.info({ user: match });
+            } catch (err) {
+                console.error(err);
+                relevantIDs[match] = "unknown/nonexistent";
                 continue;
             };
             const profile = result.user.profile;
-            userIDs[match] = profile.display_name || profile.real_name;
+            relevantIDs[match] = profile.display_name || profile.real_name;
         }
     }
-    console.log("Relevant users:", userIDs)
-    let prompt = "Relevant IDs (U = User):\n";
-    for (const [key, value] of Object.entries(userIDs)) {
+    console.log("Relevant IDs:", relevantIDs)
+    let prompt = "Relevant IDs (U = User, C = Channel):\n";
+    for (const [key, value] of Object.entries(relevantIDs)) {
         prompt += `${key}: ${value}\n`
     }
     const addedMessage = new SystemMessage(prompt);
