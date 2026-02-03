@@ -58,6 +58,10 @@ async function start() {
                 console.log(`Ignoring ${message.subtype}`);
                 return;
         }
+        if ("bot_id" in message) {
+            console.log("Ignoring bot message");
+            return;
+        }
         const messages: BaseMessage[] = [];
         const replies = await getReplies();
         if (replies.at(-1).user == botId) {
