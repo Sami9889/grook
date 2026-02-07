@@ -7,6 +7,7 @@ import { assertString, botId } from "./core.js";
 import basePrompt from "./prompt/prompt.md";
 import safeguardPrompt from "./prompt/safeguard.md";
 import { client } from "./core.js";
+import emojis from "./emojis.js";
 
 class Skip extends Error {}
 
@@ -27,16 +28,18 @@ const llmSafeguard = new ChatGroq({
     temperature: 0,
 });
 
-function error(message: string): string {
-    console.log("Tool error:", message);
+function error(message: string, ...data: unknown[]): string {
+    console.log("Tool error:", message, { data });
     return message;
 }
 
 function handle(err: any) {
-    console.error(err);
     if (err instanceof Error && err.message.includes("API error")) {
-        return `Slack API error: ${err.message}`;
+        const message = `Slack API error: ${err.message}`;
+        console.error(message);
+        return message;
     }
+    console.error("Other error:", err);
     throw err;
 }
 
@@ -120,10 +123,14 @@ const sendChannelMessage = tool(
     async function(input, config) {
         try {
             const channel: string = config.configurable.channel;
+            const thread_ts: string = config.configurable.thread_ts;
+            input.text = await safeguard(input.text);
             for (const line of input.text.split("\n")) {
                 if (!line) continue;
                 client.chat.postMessage({
                     channel,
+                    thread_ts,
+                    reply_broadcast: true,
                     text: line
                 });
             }
@@ -135,7 +142,7 @@ const sendChannelMessage = tool(
     },
     {
         name: "send_channel_message",
-        description: "Send a top-level message in the current channel.",
+        description: "Send a top-level message in both the current channel and the current thread.",
         schema: z.object({
             text: z.string().describe(TEXT_DESCRIPTION),
             done: z.boolean().describe(DONE_DESCRIPTION),
@@ -144,13 +151,44 @@ const sendChannelMessage = tool(
 )
 
 const react = tool(
-    async function(input, config) {},
+    async function(input, config) {
+        try {
+            const channel: string = config.configurable.channel;
+            const ts: string = config.configurable.ts;
+            const nonexistent: string[] = [];
+            const reactions: string[] = [];
+            for (const emoji of input.emojis) {
+                const reaction = emojis[emoji.trim()];
+                if (!reaction) {
+                    nonexistent.push(emoji);
+                    continue;
+                }
+                reactions.push(reaction);
+            }
+            if (nonexistent.length) {
+                return error(`Emojis invalid or unavailable: ${nonexistent.join(", ")}`, input);
+            }
+            const promises: Promise<unknown>[] = [];
+            console.log("Reactions:", reactions);
+            for (const reaction of reactions) {
+                promises.push(client.reactions.add({
+                    channel,
+                    timestamp: ts,
+                    name: reaction
+                }));
+            }
+            if (input.done) throw new Skip();
+            return `Reacted with ${reactions.join(", ")}`
+        } catch(err) {
+            return handle(err);
+        }
+    },
     {
         name: "react",
         description: "React to the most recent message.",
         schema: z.object({
-            name: z.array(z.string()).min(1).nonempty().describe(
-                "The reaction(s) to add to the message (without surrounding colons)."
+            emojis: z.array(z.string().nonempty()).min(1).nonempty().describe(
+                "The Unicode emoji reaction(s) to add, in separate strings. Example: 😀"
             ),
             done: z.boolean().describe(DONE_DESCRIPTION)
         })
@@ -162,6 +200,7 @@ const tools = [
     getProfile,
     sendDM,
     sendChannelMessage,
+    react,
 ]
 
 const prompt = basePrompt
@@ -199,7 +238,7 @@ async function safeguard(message: string): Promise<string> {
 
 export async function invoke(
     messages: BaseMessage[],
-    configurable: { channel: string }
+    configurable: { channel: string, thread_ts: string | undefined, ts: string }
 ): Promise<string> {
     const channel = configurable.channel.toUpperCase();
     const relevantIDs: Record<string, string> = {};
@@ -242,7 +281,7 @@ export async function invoke(
         }
     }
     console.log("Relevant IDs:", relevantIDs)
-    let prompt = "Relevant IDs (U = User, C = Channel):\n";
+    let prompt = "Relevant IDs (U = User, C/D = Channel):\n";
     for (const [key, value] of Object.entries(relevantIDs)) {
         prompt += `${key}: ${value}\n`
     }

@@ -81,7 +81,9 @@ async function start() {
             console.log(`Responding to ${message.subtype}`);
         }
         const text = await invoke(messages, {
-            channel: message.channel
+            channel: message.channel,
+            thread_ts,
+            ts: message.ts,
         });
         console.log("AI response:", text);
         const newReplies = await getReplies();
