@@ -34,7 +34,6 @@ async function start() {
             });
             return;
         }
-        console.log(message);
         async function getReplies() {
             let ts = message.ts;
             if ("thread_ts" in message && message.thread_ts) {
@@ -65,8 +64,18 @@ async function start() {
         const messages: BaseMessage[] = [];
         const replies = await getReplies();
         if (replies.at(-1).user == botId) {
-            console.log("Canceled");
+            console.log("Canceled - last message from bot");
             return;
+        }
+        const reactions = await client.reactions.get({
+            channel: message.channel,
+            timestamp: message.ts,
+            full: true,
+        });
+        for (const reaction of reactions.message?.reactions ?? []) {
+            if (reaction.users && reaction.users.includes(botId)) {
+                console.log("Canceled - reaction from bot");
+            }
         }
         for (const reply of replies) {
             if (reply.user == botId) {
@@ -88,7 +97,7 @@ async function start() {
         console.log("AI response:", text);
         const newReplies = await getReplies();
         if (!text || replies.at(-1).ts != newReplies.at(-1).ts) {
-            console.log("Canceled");
+            console.log("Canceled - history updated");
             return;
         }
         for (const line of text.split("\n")) {
