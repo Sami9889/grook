@@ -1,11 +1,10 @@
 import { AwsEventV2, AwsResponse } from "@slack/bolt/dist/receivers/AwsLambdaReceiver.js";
 import { invoke } from "./ai.js";
-import { app, botId, init, receiver } from "./core.js";
+import { app, botId, init, latestTs, receiver, updateLatestTs } from "./core.js";
 import { AIMessage, BaseMessage, HumanMessage } from "langchain";
 import { env } from "cloudflare:workers";
 import { client } from "./core.js";
 import { GenericMessageEvent } from "@slack/web-api";
-import { MessageElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse.js";
 
 async function start() {
     const ALLOWED_CHANNELS = new Set(env.ALLOWED_CHANNELS.split(","))
@@ -67,6 +66,7 @@ async function start() {
             console.log("Canceled - last message from bot");
             return;
         }
+        updateLatestTs(message.ts);
         const reactions = await client.reactions.get({
             channel: message.channel,
             timestamp: message.ts,
@@ -96,7 +96,7 @@ async function start() {
         });
         console.log("AI response:", text);
         const newReplies = await getReplies();
-        if (!text || replies.at(-1).ts != newReplies.at(-1).ts) {
+        if (!text || latestTs != newReplies.at(-1).ts) {
             console.log("Canceled - history updated");
             return;
         }

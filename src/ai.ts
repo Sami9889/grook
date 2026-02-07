@@ -3,9 +3,10 @@ import { ConversationsInfoResponse, UsersInfoResponse } from "@slack/web-api";
 import { env } from "cloudflare:workers"
 import { ChatGroq } from "@langchain/groq";
 import z from "zod";
-import { assertString, botId } from "./core.js";
+import { assertString, botId, updateLatestTs } from "./core.js";
 import basePrompt from "./prompt/prompt.md";
 import safeguardPrompt from "./prompt/safeguard.md";
+import Exa from "exa-js"
 import { client } from "./core.js";
 import createEmojiRegex from "emoji-regex"
 import emojis from "./emojis.js";
@@ -48,6 +49,42 @@ function handle(err: any) {
     console.error("Other error:", err);
     throw err;
 }
+
+const exaClient = new Exa(env.EXASEARCH_API_KEY);
+
+const searchWeb = tool(
+    async function(input, config) {
+        const channel: string = config.configurable.channel;
+        const thread_ts: string = config.configurable.thread_ts;
+        const message = await client.chat.postMessage({
+            channel,
+            thread_ts,
+            text: `searching the web for "${input.query}"...`
+        });
+        updateLatestTs(message.ts);
+        console.log("Searching web");
+        const result = await exaClient.search(input.query, {
+            numResults: 3,
+            contents: {
+                highlights: true,
+            }
+        });
+        const strings = result.results.map(result =>
+            `${result.score ? `Score: ${result.score}\n` : ""}# ${result.title} \
+- ${result.url}
+${result.highlights.join("\n\n")}`
+        );
+        console.log("Web search completed", strings);
+        return strings;
+    },
+    {
+        name: "search_web",
+        description: "Search the web using Exa Search.",
+        schema: z.object({
+            query: z.string().nonempty()
+        })
+    }
+)
 
 const skipTool = tool(
     function() {
@@ -219,6 +256,7 @@ colons (e.g. "grinning").'
 )
 
 const tools = [
+    searchWeb,
     skipTool,
     getProfile,
     sendDM,

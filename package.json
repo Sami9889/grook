@@ -1,16 +1,17 @@
 {
 	"type": "module",
 	"dependencies": {
-		"@langchain/core": "^1.1.16",
-		"@langchain/groq": "^1.0.0",
+		"@langchain/core": "^1.1.19",
+		"@langchain/groq": "^1.0.4",
 		"@slack/bolt": "^4.6.0",
 		"@slack/web-api": "^7.13.0",
 		"emoji-regex": "^10.6.0",
-		"langchain": "^1.0.3",
-		"zod": "^4.1.12"
+		"exa-js": "^2.3.0",
+		"langchain": "^1.2.18",
+		"zod": "^4.3.6"
 	},
 	"devDependencies": {
-		"@types/node": "^24.10.0",
-		"wrangler": "^4.46.0"
+		"@types/node": "^24.10.11",
+		"wrangler": "^4.63.0"
 	}
 }
