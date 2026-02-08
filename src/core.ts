@@ -6,7 +6,6 @@ export let receiver: AwsLambdaReceiver
 export let app: App;
 export let botId: string;
 export const client = new WebClient(env.SLACK_BOT_TOKEN);
-export let latestTs: string;
 
 export async function init() {
     receiver = new AwsLambdaReceiver({
@@ -24,8 +23,4 @@ export function assertString(data: unknown): asserts data is string {
     if (typeof data != "string") {
         throw new TypeError("")
     }
-}
-
-export function updateLatestTs(value: string) {
-    latestTs = value
 }

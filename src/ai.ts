@@ -3,13 +3,12 @@ import { ConversationsInfoResponse, UsersInfoResponse } from "@slack/web-api";
 import { env } from "cloudflare:workers"
 import { ChatGroq } from "@langchain/groq";
 import z from "zod";
-import { assertString, botId, updateLatestTs } from "./core.js";
+import { assertString, botId } from "./core.js";
 import basePrompt from "./prompt/prompt.md";
 import safeguardPrompt from "./prompt/safeguard.md";
 import Exa from "exa-js"
 import { client } from "./core.js";
 import createEmojiRegex from "emoji-regex"
-import emojis from "./emojis.js";
 
 const emojiRegex = createEmojiRegex();
 
@@ -56,25 +55,29 @@ const searchWeb = tool(
     async function(input, config) {
         const channel: string = config.configurable.channel;
         const thread_ts: string = config.configurable.thread_ts;
-        const message = await client.chat.postMessage({
-            channel,
-            thread_ts,
-            text: `searching the web for "${input.query}"...`
-        });
-        updateLatestTs(message.ts);
-        console.log("Searching web");
-        const result = await exaClient.search(input.query, {
+        const promise = exaClient.search(input.query, {
             numResults: 3,
             contents: {
                 highlights: true,
             }
         });
+        const message = await client.chat.postMessage({
+            channel,
+            thread_ts,
+            text: `searching the web for "${input.query}"...`
+        });
+        console.log("Searching web");
+        const result = await promise;
         const strings = result.results.map(result =>
             `${result.score ? `Score: ${result.score}\n` : ""}# ${result.title} \
 - ${result.url}
 ${result.highlights.join("\n\n")}`
         );
         console.log("Web search completed", strings);
+        await client.chat.delete({
+            channel: message.channel,
+            ts: message.ts
+        });
         return strings;
     },
     {
@@ -199,32 +202,11 @@ const react = tool(
         try {
             const channel: string = config.configurable.channel;
             const ts: string = config.configurable.ts;
-            const nonexistent: string[] = [];
-            const reactions: string[] = [];
-            for (let emoji of input.emojis) {
-                emoji = emoji.trim();
-                if (!emoji) continue;
-                if (!emoji.match(emojiRegex)) {
-                    reactions.push(emoji);
-                    continue;
-                }
-                const reaction = emojis[emoji];
-                if (!reaction) {
-                    nonexistent.push(emoji);
-                    continue;
-                }
-                reactions.push(reaction);
-            }
-            if (nonexistent.length) {
-                return error(`Emojis invalid or unavailable: ${nonexistent.join(", ")}`, input);
-            }
             const promises: Promise<unknown>[] = [];
             console.log("react", {
                 input,
-                reactions,
             });
-            console.log("Creating reaction promises");
-            for (let reaction of reactions) {
+            for (let reaction of input.emojis) {
                 reaction = reaction.trim();
                 if (!reaction) continue;
                 promises.push(client.reactions.add({
@@ -233,10 +215,9 @@ const react = tool(
                     name: reaction,
                 }));
             }
-            console.log("Awaiting reaction promises");
             await Promise.all(promises);
             if (input.skip_response) return skip("react");
-            return `Reacted with ${reactions.join(", ")}`
+            return `Reacted with ${input.emojis.join(", ")}`
         } catch(err) {
             return handle(err);
         }
@@ -246,9 +227,8 @@ const react = tool(
         description: "React to the most recent message.",
         schema: z.object({
             emojis: z.array(z.string().nonempty()).min(1).nonempty().describe(
-                'The reaction(s) to add, in separate strings. Emojis should \
-either be Unicode emojis (e.g. "😀") or Slack emoji names without surrounding \
-colons (e.g. "grinning").'
+                'The reaction(s) to add, in separate strings as Slack emoji \
+names without surrounding colons (e.g. "grinning" or "keycap_star").'
             ),
             skip_response: z.boolean().describe(SKIP_DESCRIPTION),
         })
@@ -264,8 +244,18 @@ const tools = [
     react,
 ]
 
+const date = new Date().toLocaleDateString('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+});
+
+console.log("Current date:", date);
+
 const prompt = basePrompt
     .replaceAll("{BOT_ID}", botId)
+    .replaceAll("{DATE}", date)
     .replaceAll("{CREATOR}", env.CREATOR_ID
         ? ` You were created by the user with ID ${env.CREATOR_ID}.`
         : ""
