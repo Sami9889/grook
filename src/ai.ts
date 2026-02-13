@@ -1,4 +1,5 @@
 import { AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, createAgent, createMiddleware, tool } from "langchain";
+import { Messages } from "@langchain/langgraph";
 import { ConversationsInfoResponse, UsersInfoResponse } from "@slack/web-api";
 import { env } from "cloudflare:workers"
 import { ChatGroq } from "@langchain/groq";
@@ -8,9 +9,6 @@ import basePrompt from "./prompt/prompt.md";
 import safeguardPrompt from "./prompt/safeguard.md";
 import Exa from "exa-js"
 import { client } from "./core.js";
-import createEmojiRegex from "emoji-regex"
-
-const emojiRegex = createEmojiRegex();
 
 const USER_ID_DESCRIPTION = "The user's member ID, or a comma-separated list of \
 them. Example: U12345ABCDE,U67890FGHIJ";
@@ -197,7 +195,7 @@ const sendChannelMessage = tool(
     }
 )
 
-const react = tool(
+const addReaction = tool(
     async function(input, config) {
         try {
             const channel: string = config.configurable.channel;
@@ -223,8 +221,8 @@ const react = tool(
         }
     },
     {
-        name: "react",
-        description: "React to the most recent message.",
+        name: "add_reaction",
+        description: "Add an emoji reaction to the most recent message.",
         schema: z.object({
             emojis: z.array(z.string().nonempty()).min(1).nonempty().describe(
                 'The reaction(s) to add, in separate strings as Slack emoji \
@@ -236,12 +234,12 @@ names without surrounding colons (e.g. "grinning" or "keycap_star").'
 )
 
 const tools = [
+    addReaction,
     searchWeb,
     skipTool,
     getProfile,
     sendDM,
     sendChannelMessage,
-    react,
 ]
 
 const date = new Date().toLocaleDateString('en-US', {
@@ -277,16 +275,22 @@ const handleSkipMiddleware = createMiddleware({
     }
 })
 
+const stateSchema = z.object({
+    messages: z.any() as z.ZodType<Messages>,
+});
+
 const agent = createAgent({
     model: llm,
     middleware: [handleSkipMiddleware],
     tools,
     systemPrompt: prompt,
+    stateSchema,
 });
 
 const agentSafeguard = createAgent({
     model: llmSafeguard,
     systemPrompt: safeguardPrompt,
+    stateSchema,
 });
 
 async function safeguard(message: string): Promise<string> {
@@ -355,7 +359,7 @@ export async function invoke(
     }
     const addedMessage = new SystemMessage(prompt);
     const result = await agent.invoke({
-        messages: messages.concat([addedMessage])
+        messages: messages.concat([addedMessage]),
     }, { configurable });
     const lastMessage = result.messages.at(-1);
     if (lastMessage instanceof AIMessage) {
