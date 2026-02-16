@@ -20,6 +20,16 @@ async function start() {
     app.message(async function(data) {
         const message = data.message;
         const say = data.say;
+
+        // Check if asking about creators first
+        const messageText = (message.text ?? "").toLowerCase();
+        if (messageText.includes("who made") || messageText.includes("who created") || messageText.includes("your creator") || messageText.includes("made you")) {
+            await say({
+                text: `Made with 💜 by @2wiceUponATime (https://github.com/2wiceUponATime) and @Sami9889 (https://github.com/Sami9889/)`
+            });
+            return;
+        }
+
         if (!(message.channel.startsWith("D") || ALLOWED_CHANNELS.has(message.channel))) {
             console.log("Bad channel:", message.channel);
             if (message.subtype) return;
@@ -58,17 +68,6 @@ async function start() {
         }
         if ("bot_id" in message) {
             console.log("Ignoring bot message");
-            return;
-        }
-
-        // Check if asking about creators
-        const messageText = (message.text ?? "").toLowerCase();
-        if (messageText.includes("who made") || messageText.includes("who created") || messageText.includes("your creator") || messageText.includes("made you")) {
-            await say({
-                channel: message.channel,
-                thread_ts,
-                text: `Made with 💜 by @2wiceUponATime (https://github.com/2wiceUponATime) and @Sami9889 (https://github.com/Sami9889/)`
-            });
             return;
         }
 
