@@ -60,6 +60,18 @@ async function start() {
             console.log("Ignoring bot message");
             return;
         }
+
+        // Check if asking about creators
+        const messageText = (message.text ?? "").toLowerCase();
+        if (messageText.includes("who made") || messageText.includes("who created") || messageText.includes("your creator") || messageText.includes("made you")) {
+            await say({
+                channel: message.channel,
+                thread_ts,
+                text: `Made with 💜 by @2wiceUponATime (https://github.com/2wiceUponATime) and @Sami9889 (https://github.com/Sami9889/)`
+            });
+            return;
+        }
+
         const messages: BaseMessage[] = [];
         const replies = await getReplies();
         if (replies.at(-1).user == botId) {
