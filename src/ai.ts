@@ -236,14 +236,13 @@ names without surrounding colons (e.g. "grinning" or "keycap_star").'
 const getImageDescription = tool(
     async function(input) {
         try {
-            const response = await fetch(input.image_url, { method: "HEAD" });
-            if (!response.ok) {
-                return error("Could not access image URL");
+            if (!env.ANTHROPIC_API_KEY) {
+                return error("ANTHROPIC_API_KEY not configured");
             }
             const analysis = await fetch("https://api.anthropic.com/v1/messages", {
                 method: "POST",
                 headers: {
-                    "x-api-key": env.ANTHROPIC_API_KEY || "",
+                    "x-api-key": env.ANTHROPIC_API_KEY,
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json",
                 },
@@ -271,7 +270,8 @@ const getImageDescription = tool(
                 }),
             });
             if (!analysis.ok) {
-                return error(`Vision API error: ${analysis.status}`);
+                const errorText = await analysis.text();
+                return error(`Vision API error: ${analysis.status} - ${errorText}`);
             }
             const data = await analysis.json() as any;
             const textContent = data.content?.find((b: any) => b.type === "text")?.text;
@@ -293,13 +293,12 @@ const getImageDescription = tool(
 const dereferenceArchiveLink = tool(
     async function(input) {
         try {
-            let url = input.url;
-            if (!url.includes("web.archive.org")) {
+            if (!input.url.includes("web.archive.org")) {
                 return error("URL must be an archive.org link");
             }
-            const archiveResponse = await fetch(url);
+            const archiveResponse = await fetch(input.url);
             if (!archiveResponse.ok) {
-                return error(`Failed to fetch archive page: ${archiveResponse.status}`);
+                return error(`Failed to fetch archive: ${archiveResponse.status}`);
             }
             const html = await archiveResponse.text();
             const textContent = html
@@ -310,9 +309,9 @@ const dereferenceArchiveLink = tool(
                 .trim();
             const maxLength = 2000;
             if (textContent.length > maxLength) {
-                return textContent.substring(0, maxLength) + "... (truncated)";
+                return textContent.substring(0, maxLength) + "...\n(truncated)";
             }
-            return textContent;
+            return textContent || error("No content found in archive");
         } catch (err) {
             return handle(err);
         }
@@ -321,7 +320,7 @@ const dereferenceArchiveLink = tool(
         name: "dereference_archive_link",
         description: "Fetch and retrieve the content from a web.archive.org link. Useful for accessing historical snapshots of websites.",
         schema: z.object({
-            url: z.string().url().describe("The full web.archive.org URL to dereference (e.g., https://web.archive.org/web/20210101000000*/example.com)"),
+            url: z.string().url().describe("The full web.archive.org URL"),
         }),
     }
 )
@@ -333,7 +332,6 @@ const tools = [
     getProfile,
     sendDM,
     sendChannelMessage,
-    getImageDescription,
     dereferenceArchiveLink,
 ]
 
