@@ -6,3 +6,4 @@ Parts of [`prompt.md`](https://github.com/2wiceUponATime/grook/blob/main/src/pro
 
 - [@2wiceUponATime](https://github.com/2wiceUponATime)
 - [@Sami9889](https://github.com/Sami9889/)
+- Gabe Schrock
