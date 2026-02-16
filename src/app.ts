@@ -25,7 +25,7 @@ async function start() {
         const messageText = (message.text ?? "").toLowerCase();
         if (messageText.includes("who made") || messageText.includes("who created") || messageText.includes("your creator") || messageText.includes("made you")) {
             await say({
-                text: `Made with 💜 by @2wiceUponATime (https://github.com/2wiceUponATime) and @Sami9889 (https://github.com/Sami9889/)`
+                text: `Made with 💜 by @2wiceUponATime (https://github.com/2wiceUponATime), Sami Singh (@Sami9889 - https://github.com/Sami9889/), and Gabe Schrock`
             });
             return;
         }
