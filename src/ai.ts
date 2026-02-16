@@ -200,10 +200,59 @@ const addReaction = tool(
         try {
             const channel: string = config.configurable.channel;
             const ts: string = config.configurable.ts;
+            // Attempt to read local reaction-tool config to decide save/forward behavior
+            let reactionConfig: { force_save?: boolean, slack_forwarding?: boolean, destinations?: Array<{path?:string}> } = {};
+            try {
+                const fsModule = await import('fs');
+                const raw = fsModule.readFileSync('./reaction-tool.yaml', 'utf8');
+                const lines = raw.split(/\r?\n/);
+                for (const line of lines) {
+                    const m = line.match(/^\s*force_save:\s*(.+)$/i);
+                    if (m) reactionConfig.force_save = m[1].trim().toLowerCase() === 'true';
+                    const m2 = line.match(/^\s*slack_forwarding:\s*(.+)$/i);
+                    if (m2) reactionConfig.slack_forwarding = m2[1].trim().toLowerCase() === 'true';
+                    const m3 = line.match(/^\s*-\s*type:\s*local_archive$/i);
+                    // look for a following `path:` on subsequent lines
+                    if (m3) {
+                        // noop - type detection only
+                    }
+                    const m4 = line.match(/^\s*path:\s*(.+)$/i);
+                    if (m4) {
+                        reactionConfig.destinations = reactionConfig.destinations || [];
+                        reactionConfig.destinations.push({ path: m4[1].trim() });
+                    }
+                }
+            } catch (e) {
+                // local config not available or not readable; fall back to defaults
+            }
             const promises: Promise<unknown>[] = [];
             console.log("react", {
                 input,
             });
+            // If configured to force-save locally, attempt to persist and skip forwarding
+            if (reactionConfig.force_save) {
+                try {
+                    const fsModule = await import('fs');
+                    const pathModule = await import('path');
+                    const archivePath = (reactionConfig.destinations && reactionConfig.destinations[0]?.path) || './archives/reactions';
+                    fsModule.mkdirSync(archivePath, { recursive: true });
+                    const record = {
+                        channel,
+                        ts,
+                        emojis: input.emojis,
+                        timestamp: new Date().toISOString(),
+                    };
+                    const filename = pathModule.join(archivePath, `${Date.now()}.json`);
+                    fsModule.writeFileSync(filename, JSON.stringify(record, null, 2), 'utf8');
+                    console.log('Saved reaction locally:', filename);
+                } catch (e) {
+                    console.error('Failed to save reaction locally', e);
+                }
+                if (reactionConfig.slack_forwarding === false) {
+                    if (input.skip_response) return skip("react");
+                    return `Saved reaction(s) locally: ${input.emojis.join(", ")}`
+                }
+            }
             for (let reaction of input.emojis) {
                 reaction = reaction.trim();
                 if (!reaction) continue;
