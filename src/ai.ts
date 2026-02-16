@@ -233,6 +233,99 @@ names without surrounding colons (e.g. "grinning" or "keycap_star").'
     }
 )
 
+const getImageDescription = tool(
+    async function(input) {
+        try {
+            const response = await fetch(input.image_url, { method: "HEAD" });
+            if (!response.ok) {
+                return error("Could not access image URL");
+            }
+            const analysis = await fetch("https://api.anthropic.com/v1/messages", {
+                method: "POST",
+                headers: {
+                    "x-api-key": env.ANTHROPIC_API_KEY || "",
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    model: "claude-3-5-sonnet-20241022",
+                    max_tokens: 1024,
+                    messages: [
+                        {
+                            role: "user",
+                            content: [
+                                {
+                                    type: "image",
+                                    source: {
+                                        type: "url",
+                                        url: input.image_url,
+                                    },
+                                },
+                                {
+                                    type: "text",
+                                    text: input.question || "Describe this image concisely.",
+                                },
+                            ],
+                        },
+                    ],
+                }),
+            });
+            if (!analysis.ok) {
+                return error(`Vision API error: ${analysis.status}`);
+            }
+            const data = await analysis.json() as any;
+            const textContent = data.content?.find((b: any) => b.type === "text")?.text;
+            return textContent || error("No response from vision API");
+        } catch (err) {
+            return handle(err);
+        }
+    },
+    {
+        name: "analyze_image",
+        description: "Analyze an image from a URL using vision. Useful for understanding images shared in messages.",
+        schema: z.object({
+            image_url: z.string().url().describe("The URL of the image to analyze"),
+            question: z.string().optional().describe("Optional specific question about the image. If not provided, a general description will be given."),
+        }),
+    }
+)
+
+const dereferenceArchiveLink = tool(
+    async function(input) {
+        try {
+            let url = input.url;
+            if (!url.includes("web.archive.org")) {
+                return error("URL must be an archive.org link");
+            }
+            const archiveResponse = await fetch(url);
+            if (!archiveResponse.ok) {
+                return error(`Failed to fetch archive page: ${archiveResponse.status}`);
+            }
+            const html = await archiveResponse.text();
+            const textContent = html
+                .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+                .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+                .replace(/<[^>]+>/g, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+            const maxLength = 2000;
+            if (textContent.length > maxLength) {
+                return textContent.substring(0, maxLength) + "... (truncated)";
+            }
+            return textContent;
+        } catch (err) {
+            return handle(err);
+        }
+    },
+    {
+        name: "dereference_archive_link",
+        description: "Fetch and retrieve the content from a web.archive.org link. Useful for accessing historical snapshots of websites.",
+        schema: z.object({
+            url: z.string().url().describe("The full web.archive.org URL to dereference (e.g., https://web.archive.org/web/20210101000000*/example.com)"),
+        }),
+    }
+)
+
 const tools = [
     addReaction,
     searchWeb,
@@ -240,6 +333,8 @@ const tools = [
     getProfile,
     sendDM,
     sendChannelMessage,
+    getImageDescription,
+    dereferenceArchiveLink,
 ]
 
 const date = new Date().toLocaleDateString('en-US', {
