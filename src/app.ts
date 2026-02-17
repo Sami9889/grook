@@ -10,10 +10,8 @@ async function start() {
     const ALLOWED_CHANNELS = new Set(env.ALLOWED_CHANNELS.split(","))
     await init();
 
-    //console.log("Starting");
-
     app.use(async function(args) {
-        args.logger.debug(args.body);
+        args.logger.info(args.body);
         return args.next();
     })
 
