@@ -15,7 +15,6 @@ export async function init() {
         token: env.SLACK_BOT_TOKEN,
         receiver,
     });
-    app.logger.setLevel(LogLevel.INFO);
     const authResponse = await client.auth.test();
     botId = authResponse.user_id ?? "";
 }

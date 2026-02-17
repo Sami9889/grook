@@ -11,7 +11,7 @@ async function start() {
     await init();
 
     app.use(async function(args) {
-        args.logger.info(args.body);
+        console.log("Event", args.body);
         return args.next();
     })
 
