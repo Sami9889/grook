@@ -1,6 +1,6 @@
 import { App, AwsLambdaReceiver } from "@slack/bolt";
 import { env } from "cloudflare:workers";
-import { WebClient } from "@slack/web-api";
+import { LogLevel, WebClient } from "@slack/web-api";
 
 export let receiver: AwsLambdaReceiver
 export let app: App;
