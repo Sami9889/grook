@@ -1,7 +1,7 @@
 import type { AwsEventV2, AwsResponse } from "@slack/bolt/dist/receivers/AwsLambdaReceiver.js";
 import { invoke } from "./ai.js";
 import { app, botId, init, receiver } from "./core.js";
-import { AIMessage, BaseMessage, ContentBlock, HumanMessage } from "langchain";
+import { AIMessage, BaseMessage, HumanMessage } from "langchain";
 import { env } from "cloudflare:workers";
 import { client } from "./core.js";
 import type { ConversationsRepliesResponse, GenericMessageEvent } from "@slack/web-api";
@@ -86,9 +86,11 @@ async function start() {
                                 "Authorization": "Bearer " + env.SLACK_BOT_TOKEN,
                             }
                         }).then(result => new Promise(async resolve => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result);
-                            reader.readAsDataURL(await result.blob())
+                            const buffer = await result.arrayBuffer();
+                            const base64 = btoa(
+                                String.fromCharCode(...new Uint8Array(buffer))
+                            );
+                            return `data:${file.mimetype};base64,${base64}`
                         }));
                         filePromises.push(data as Promise<string>);
                     }
