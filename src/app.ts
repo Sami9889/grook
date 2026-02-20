@@ -85,14 +85,14 @@ async function start() {
                             headers: {
                                 "Authorization": "Bearer " + env.SLACK_BOT_TOKEN,
                             }
-                        }).then(result => new Promise(async resolve => {
+                        }).then(async result => {
                             const buffer = await result.arrayBuffer();
                             const base64 = btoa(
                                 String.fromCharCode(...new Uint8Array(buffer))
                             );
                             return `data:${file.mimetype};base64,${base64}`
-                        }));
-                        filePromises.push(data as Promise<string>);
+                        });
+                        filePromises.push(data);
                     }
                 }
             }
