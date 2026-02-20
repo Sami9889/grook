@@ -315,41 +315,51 @@ export async function invoke(
     const channel = configurable.channel.toUpperCase();
     const relevantIDs: Record<string, string> = {};
     for (const message of messages) {
-        assertString(message.content);
-        const matches: string[] = message.content.match(/\b(u|c|d)[a-z0-9]{10}\b/gi) ?? [];
-        if (!(channel in relevantIDs)) {
-            matches.push(channel);
+        let content: string[];
+        if (typeof message.content == "string") {
+            content = [message.content];
+        } else {
+            content = message.content
+                .filter(block => block.type == "text")
+                .map(block => (block.text ?? block.content) as string);
         }
-        for (let match of matches) {
-            match = match.toUpperCase();
-            if (match in relevantIDs) {
-                continue;
+        for (const part of content) {
+            assertString(part);
+            const matches: string[] = part.match(/\b(u|c|d)[a-z0-9]{10}\b/gi) ?? [];
+            if (!(channel in relevantIDs)) {
+                matches.push(channel);
             }
-            if (match.startsWith("C") || match.startsWith("D")) {
-                let result: ConversationsInfoResponse;
-                try {
-                    result = await client.conversations.info({ channel: match });
-                } catch (err) {
-                    console.error(err);
-                    relevantIDs[match] = "unknown/nonexistent/private";
+            for (let match of matches) {
+                match = match.toUpperCase();
+                if (match in relevantIDs) {
                     continue;
                 }
-                if (match == channel) {
-                    match += " (current channel)";
+                if (match.startsWith("C") || match.startsWith("D")) {
+                    let result: ConversationsInfoResponse;
+                    try {
+                        result = await client.conversations.info({ channel: match });
+                    } catch (err) {
+                        console.error(err);
+                        relevantIDs[match] = "unknown/nonexistent/private";
+                        continue;
+                    }
+                    if (match == channel) {
+                        match += " (current channel)";
+                    }
+                    relevantIDs[match] = result.channel.name ?? "direct message";
+                    continue;
                 }
-                relevantIDs[match] = result.channel.name ?? "direct message";
-                continue;
+                let result: UsersInfoResponse;
+                try {
+                    result = await client.users.info({ user: match });
+                } catch (err) {
+                    console.error(err);
+                    relevantIDs[match] = "unknown/nonexistent";
+                    continue;
+                };
+                const profile = result.user.profile;
+                relevantIDs[match] = profile.display_name || profile.real_name;
             }
-            let result: UsersInfoResponse;
-            try {
-                result = await client.users.info({ user: match });
-            } catch (err) {
-                console.error(err);
-                relevantIDs[match] = "unknown/nonexistent";
-                continue;
-            };
-            const profile = result.user.profile;
-            relevantIDs[match] = profile.display_name || profile.real_name;
         }
     }
     console.log("Relevant IDs:", relevantIDs)

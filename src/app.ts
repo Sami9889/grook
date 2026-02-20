@@ -105,10 +105,7 @@ async function start() {
             return new HumanMessage({
                 content: [{
                     type: "text",
-                    content: `User ID ${reply.user}: ${reply.text}`
-                }, {
-                    type: "image",
-                    url: ""
+                    text: `User ID ${reply.user}: ${reply.text}`
                 }]
             });
         }
