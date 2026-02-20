@@ -1,7 +1,7 @@
 import type { AwsEventV2, AwsResponse } from "@slack/bolt/dist/receivers/AwsLambdaReceiver.js";
 import { invoke } from "./ai.js";
 import { app, botId, init, logErrors, receiver } from "./core.js";
-import { AIMessage, BaseMessage, HumanMessage } from "langchain";
+import { AIMessage, BaseMessage, ContentBlock, HumanMessage } from "langchain";
 import { env } from "cloudflare:workers";
 import { client } from "./core.js";
 import type { ConversationsRepliesResponse, GenericMessageEvent } from "@slack/web-api";
@@ -77,7 +77,7 @@ async function start() {
             }
         }
         async function convertReply(reply: Reply): Promise<BaseMessage> {
-            const filePromises: Promise<string>[] = [];
+            const filePromises: Promise<ContentBlock>[] = [];
             if ("files" in reply && reply.files) {
                 for (const file of reply.files) {
                     if (file.mimetype.startsWith("image/")) {
@@ -86,11 +86,17 @@ async function start() {
                                 "Authorization": "Bearer " + env.SLACK_BOT_TOKEN,
                             }
                         }).then(async result => {
+                            if (!result.ok) console.error(result.statusText);
                             const buffer = await result.arrayBuffer();
                             const base64 = btoa(
                                 String.fromCharCode(...new Uint8Array(buffer))
                             );
-                            return `data:${file.mimetype};base64,${base64}`
+                            return {
+                                type: "image_url",
+                                image_url: {
+                                    url: `data:${file.mimetype};base64,${base64}`,
+                                }
+                            }
                         });
                         filePromises.push(data);
                     }
@@ -102,11 +108,12 @@ async function start() {
             if (reply.user == botId) {
                 return new AIMessage(reply.text ?? "");
             }[]
+            const files = filePromises.length ? await Promise.all(filePromises) : [];
             return new HumanMessage({
                 content: [{
                     type: "text",
                     text: `User ID ${reply.user}: ${reply.text}`
-                }]
+                }, ...files]
             });
         }
         const messages: BaseMessage[] = Array(replies.length);

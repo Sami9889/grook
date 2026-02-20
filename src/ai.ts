@@ -16,6 +16,7 @@ const TEXT_DESCRIPTION = "The message text. To send multiple messages at once, \
 place them on separate lines. Example: 'Hello, world!'";
 const SKIP_DESCRIPTION = "If true, `skip` will be called after the message is \
 sent, ending the agent turn without a response."
+const SKIP = z.union([z.boolean(), z.enum(["true", "false"])]).describe(SKIP_DESCRIPTION)
 
 const llm = new ChatGroq({
     model: env.GROQ_MODEL,
@@ -45,6 +46,10 @@ function handle(err: any) {
     }
     console.error("Other error:", err);
     throw err;
+}
+
+function bool(input: z.infer<typeof SKIP>) {
+    return input === true || input === "true";
 }
 
 const exaClient = new Exa(env.EXASEARCH_API_KEY);
@@ -147,7 +152,7 @@ const sendDM = tool(
                     text: line,
                 })
             }
-            if (input.skip_response) return skip("send_dm");
+            if (bool(input.skip_response)) return skip("send_dm");
             return "success";
         } catch(err) {
             return handle(err);
@@ -159,7 +164,7 @@ const sendDM = tool(
         schema: z.object({
             user_id: z.string().describe(USER_ID_DESCRIPTION),
             text: z.string().describe(TEXT_DESCRIPTION),
-            skip_response: z.boolean().describe(SKIP_DESCRIPTION),
+            skip_response: SKIP,
         }),
     }
 )
@@ -179,7 +184,7 @@ const sendChannelMessage = tool(
                     text: line
                 });
             }
-            if (input.skip_response) return skip("send_channel_message");
+            if (bool(input.skip_response)) return skip("send_channel_message");
             return "success";
         } catch(err) {
             return handle(err);
@@ -190,7 +195,7 @@ const sendChannelMessage = tool(
         description: "Send a top-level message in both the current channel and the current thread.",
         schema: z.object({
             text: z.string().describe(TEXT_DESCRIPTION),
-            skip_response: z.boolean().describe(SKIP_DESCRIPTION),
+            skip_response: SKIP,
         }),
     }
 )
@@ -214,7 +219,7 @@ const addReaction = tool(
                 }));
             }
             await Promise.all(promises);
-            if (input.skip_response) return skip("react");
+            if (bool(input.skip_response)) return skip("react");
             return `Reacted with ${input.emojis.join(", ")}`
         } catch(err) {
             return handle(err);
@@ -228,7 +233,7 @@ const addReaction = tool(
                 'The reaction(s) to add, in separate strings as Slack emoji \
 names without surrounding colons (e.g. "grinning" or "keycap_star").'
             ),
-            skip_response: z.boolean().describe(SKIP_DESCRIPTION),
+            skip_response: SKIP,
         })
     }
 )
