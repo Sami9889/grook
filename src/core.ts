@@ -1,6 +1,8 @@
 import { App, AwsLambdaReceiver } from "@slack/bolt";
 import { env } from "cloudflare:workers";
-import { LogLevel, WebClient } from "@slack/web-api";
+import { WebClient } from "@slack/web-api";
+
+type Args<T> = T extends (...args: infer U) => any ? U : never;
 
 export let receiver: AwsLambdaReceiver
 export let app: App;
@@ -23,4 +25,15 @@ export function assertString(data: unknown): asserts data is string {
     if (typeof data != "string") {
         throw new TypeError("")
     }
+}
+
+export function logErrors<T extends (...args: any[]) => any>(inner: T) {
+    return (async (...args: any[]) => {
+        try {
+            return await inner(...args);
+        } catch(err) {
+            console.error(err);
+            throw err;
+        }
+    }) as T;
 }

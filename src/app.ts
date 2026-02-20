@@ -1,6 +1,6 @@
 import type { AwsEventV2, AwsResponse } from "@slack/bolt/dist/receivers/AwsLambdaReceiver.js";
 import { invoke } from "./ai.js";
-import { app, botId, init, receiver } from "./core.js";
+import { app, botId, init, logErrors, receiver } from "./core.js";
 import { AIMessage, BaseMessage, HumanMessage } from "langchain";
 import { env } from "cloudflare:workers";
 import { client } from "./core.js";
@@ -17,7 +17,7 @@ async function start() {
         return args.next();
     })
 
-    app.message(async function(data) {
+    app.message(logErrors(async function(data) {
         const message = data.message;
         const say = data.say;
         if (!(message.channel.startsWith("D") || ALLOWED_CHANNELS.has(message.channel))) {
@@ -146,7 +146,7 @@ async function start() {
                 text: line,
             });
         }
-    });
+    }));
 }
 
 async function requestToAws(request: Request): Promise<AwsEventV2> {

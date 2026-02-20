@@ -252,9 +252,9 @@ const date = new Date().toLocaleDateString('en-US', {
 console.log("Current date:", date);
 
 const prompt = basePrompt
-    .replaceAll("{BOT_ID}", botId)
-    .replaceAll("{DATE}", date)
-    .replaceAll("{CREATOR}", env.CREATOR_ID
+    .replaceAll("{{BOT_ID}}", botId)
+    .replaceAll("{{DATE}}", date)
+    .replaceAll("{{CREATOR}}", env.CREATOR_ID
         ? ` You were created by the user with ID ${env.CREATOR_ID}.`
         : ""
     );
