@@ -78,30 +78,30 @@ async function start() {
         }
         async function convertReply(reply: Reply): Promise<BaseMessage> {
             const filePromises: Promise<ContentBlock>[] = [];
-            if ("files" in reply && reply.files) {
-                for (const file of reply.files) {
-                    if (file.mimetype.startsWith("image/")) {
-                        const data = fetch(file.url_private_download, {
-                            headers: {
-                                "Authorization": "Bearer " + env.SLACK_BOT_TOKEN,
-                            }
-                        }).then(async result => {
-                            if (!result.ok) console.error(result.statusText);
-                            const buffer = await result.arrayBuffer();
-                            const base64 = btoa(
-                                String.fromCharCode(...new Uint8Array(buffer))
-                            );
-                            return {
-                                type: "image_url",
-                                image_url: {
-                                    url: `data:${file.mimetype};base64,${base64}`,
-                                }
-                            }
-                        });
-                        filePromises.push(data);
-                    }
-                }
-            }
+            // if ("files" in reply && reply.files) {
+            //     for (const file of reply.files) {
+            //         if (file.mimetype.startsWith("image/")) {
+            //             const data = fetch(file.url_private_download, {
+            //                 headers: {
+            //                     "Authorization": "Bearer " + env.SLACK_BOT_TOKEN,
+            //                 }
+            //             }).then(async result => {
+            //                 if (!result.ok) console.error(result.statusText);
+            //                 const buffer = await result.arrayBuffer();
+            //                 const base64 = btoa(
+            //                     String.fromCharCode(...new Uint8Array(buffer))
+            //                 );
+            //                 return {
+            //                     type: "image_url",
+            //                     image_url: {
+            //                         url: `data:${file.mimetype};base64,${base64}`,
+            //                     }
+            //                 }
+            //             });
+            //             filePromises.push(data);
+            //         }
+            //     }
+            // }
             if (filePromises.length && reply.ts == message.ts) {
                 console.log("Got attached images", await Promise.all(filePromises));
             }
