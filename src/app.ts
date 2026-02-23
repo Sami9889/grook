@@ -1,10 +1,12 @@
-import { AwsEventV2, AwsResponse } from "@slack/bolt/dist/receivers/AwsLambdaReceiver.js";
+import type { AwsEventV2, AwsResponse } from "@slack/bolt/dist/receivers/AwsLambdaReceiver.js";
 import { invoke } from "./ai.js";
-import { app, botId, init, receiver } from "./core.js";
-import { AIMessage, BaseMessage, HumanMessage } from "langchain";
+import { app, botId, init, logErrors, receiver } from "./core.js";
+import { AIMessage, BaseMessage, ContentBlock, HumanMessage } from "langchain";
 import { env } from "cloudflare:workers";
 import { client } from "./core.js";
-import { GenericMessageEvent } from "@slack/web-api";
+import type { ConversationsRepliesResponse, GenericMessageEvent } from "@slack/web-api";
+
+type Reply = ConversationsRepliesResponse["messages"][number];
 
 async function start() {
     const ALLOWED_CHANNELS = new Set(env.ALLOWED_CHANNELS.split(","))
@@ -15,7 +17,7 @@ async function start() {
         return args.next();
     })
 
-    app.message(async function(data) {
+    app.message(logErrors(async function(data) {
         const message = data.message;
         const say = data.say;
 
@@ -55,6 +57,7 @@ async function start() {
 
         let thread_ts: string | undefined = message.ts;
         switch (message.subtype) {
+            case "file_share":
             case undefined:
                 break;
             case "channel_join":
@@ -68,8 +71,6 @@ async function start() {
             console.log("Ignoring bot message");
             return;
         }
-
-        const messages: BaseMessage[] = [];
         const replies = await getReplies();
         if (replies.at(-1).user == botId) {
             console.log("Canceled - last message from bot");
@@ -85,15 +86,54 @@ async function start() {
                 console.log("Canceled - reaction from bot");
             }
         }
-        for (const reply of replies) {
-            if (reply.user == botId) {
-                messages.push(new AIMessage(reply.text ?? ""));
-            } else {
-                messages.push(new HumanMessage(
-                    `User ID ${reply.user}: ${reply.text}`
-                ));
+        async function convertReply(reply: Reply): Promise<BaseMessage> {
+            const filePromises: Promise<ContentBlock>[] = [];
+            // if ("files" in reply && reply.files) {
+            //     for (const file of reply.files) {
+            //         if (file.mimetype.startsWith("image/")) {
+            //             const data = fetch(file.url_private_download, {
+            //                 headers: {
+            //                     "Authorization": "Bearer " + env.SLACK_BOT_TOKEN,
+            //                 }
+            //             }).then(async result => {
+            //                 if (!result.ok) console.error(result.statusText);
+            //                 const buffer = await result.arrayBuffer();
+            //                 const base64 = btoa(
+            //                     String.fromCharCode(...new Uint8Array(buffer))
+            //                 );
+            //                 return {
+            //                     type: "image_url",
+            //                     image_url: {
+            //                         url: `data:${file.mimetype};base64,${base64}`,
+            //                     }
+            //                 }
+            //             });
+            //             filePromises.push(data);
+            //         }
+            //     }
+            // }
+            if (filePromises.length && reply.ts == message.ts) {
+                console.log("Got attached images", await Promise.all(filePromises));
             }
+            if (reply.user == botId) {
+                return new AIMessage(reply.text ?? "");
+            }[]
+            const files = filePromises.length ? await Promise.all(filePromises) : [];
+            return new HumanMessage({
+                content: [{
+                    type: "text",
+                    text: `User ID ${reply.user}: ${reply.text}`
+                }, ...files]
+            });
         }
+        const messages: BaseMessage[] = Array(replies.length);
+        const promises: Promise<unknown>[] = Array(replies.length);
+        for (const [idx, reply] of replies.entries()) {
+            promises[idx] = convertReply(reply).then(result => {
+                messages[idx] = result
+            });
+        }
+        await Promise.all(promises);
         if (message.subtype) {
             console.log(`Responding to ${message.subtype}`);
         }
@@ -120,17 +160,19 @@ async function start() {
                 text: line,
             });
         }
-    });
+    }));
 }
 
 async function requestToAws(request: Request): Promise<AwsEventV2> {
     const url = new URL(request.url);
+    const headers: Record<string, string> = {};
+    request.headers.forEach((v, k) => headers[k] = v);
     return {
         version: "2.0",
         routeKey: "$default",
         rawPath: url.pathname,
         rawQueryString: url.search.slice(1),
-        headers: Object.fromEntries(request.headers.entries()),
+        headers,
         requestContext: { http: { method: request.method, path: url.pathname } },
         body: await request.text() || undefined,
         isBase64Encoded: false,

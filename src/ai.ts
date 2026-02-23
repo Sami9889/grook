@@ -16,6 +16,7 @@ const TEXT_DESCRIPTION = "The message text. To send multiple messages at once, \
 place them on separate lines. Example: 'Hello, world!'";
 const SKIP_DESCRIPTION = "If true, `skip` will be called after the message is \
 sent, ending the agent turn without a response."
+const SKIP = z.union([z.boolean(), z.enum(["true", "false"])]).describe(SKIP_DESCRIPTION)
 
 const llm = new ChatGroq({
     model: env.GROQ_MODEL,
@@ -45,6 +46,10 @@ function handle(err: any) {
     }
     console.error("Other error:", err);
     throw err;
+}
+
+function bool(input: z.infer<typeof SKIP>) {
+    return input === true || input === "true";
 }
 
 const exaClient = new Exa(env.EXASEARCH_API_KEY);
@@ -147,7 +152,7 @@ const sendDM = tool(
                     text: line,
                 })
             }
-            if (input.skip_response) return skip("send_dm");
+            if (bool(input.skip_response)) return skip("send_dm");
             return "success";
         } catch(err) {
             return handle(err);
@@ -159,7 +164,7 @@ const sendDM = tool(
         schema: z.object({
             user_id: z.string().describe(USER_ID_DESCRIPTION),
             text: z.string().describe(TEXT_DESCRIPTION),
-            skip_response: z.boolean().describe(SKIP_DESCRIPTION),
+            skip_response: SKIP,
         }),
     }
 )
@@ -179,7 +184,7 @@ const sendChannelMessage = tool(
                     text: line
                 });
             }
-            if (input.skip_response) return skip("send_channel_message");
+            if (bool(input.skip_response)) return skip("send_channel_message");
             return "success";
         } catch(err) {
             return handle(err);
@@ -190,7 +195,7 @@ const sendChannelMessage = tool(
         description: "Send a top-level message in both the current channel and the current thread.",
         schema: z.object({
             text: z.string().describe(TEXT_DESCRIPTION),
-            skip_response: z.boolean().describe(SKIP_DESCRIPTION),
+            skip_response: SKIP,
         }),
     }
 )
@@ -263,7 +268,7 @@ const addReaction = tool(
                 }));
             }
             await Promise.all(promises);
-            if (input.skip_response) return skip("react");
+            if (bool(input.skip_response)) return skip("react");
             return `Reacted with ${input.emojis.join(", ")}`
         } catch(err) {
             return handle(err);
@@ -277,7 +282,7 @@ const addReaction = tool(
                 'The reaction(s) to add, in separate strings as Slack emoji \
 names without surrounding colons (e.g. "grinning" or "keycap_star").'
             ),
-            skip_response: z.boolean().describe(SKIP_DESCRIPTION),
+            skip_response: SKIP,
         })
     }
 )
@@ -394,9 +399,9 @@ const date = new Date().toLocaleDateString('en-US', {
 console.log("Current date:", date);
 
 const prompt = basePrompt
-    .replaceAll("{BOT_ID}", botId)
-    .replaceAll("{DATE}", date)
-    .replaceAll("{CREATOR}", env.CREATOR_ID
+    .replaceAll("{{BOT_ID}}", botId)
+    .replaceAll("{{DATE}}", date)
+    .replaceAll("{{CREATOR}}", env.CREATOR_ID
         ? ` You were created by the user with ID ${env.CREATOR_ID}.`
         : ""
     );
@@ -457,41 +462,51 @@ export async function invoke(
     const channel = configurable.channel.toUpperCase();
     const relevantIDs: Record<string, string> = {};
     for (const message of messages) {
-        assertString(message.content);
-        const matches: string[] = message.content.match(/\b(u|c|d)[a-z0-9]{10}\b/gi) ?? [];
-        if (!(channel in relevantIDs)) {
-            matches.push(channel);
+        let content: string[];
+        if (typeof message.content == "string") {
+            content = [message.content];
+        } else {
+            content = message.content
+                .filter(block => block.type == "text")
+                .map(block => (block.text ?? block.content) as string);
         }
-        for (let match of matches) {
-            match = match.toUpperCase();
-            if (match in relevantIDs) {
-                continue;
+        for (const part of content) {
+            assertString(part);
+            const matches: string[] = part.match(/\b(u|c|d)[a-z0-9]{10}\b/gi) ?? [];
+            if (!(channel in relevantIDs)) {
+                matches.push(channel);
             }
-            if (match.startsWith("C") || match.startsWith("D")) {
-                let result: ConversationsInfoResponse;
-                try {
-                    result = await client.conversations.info({ channel: match });
-                } catch (err) {
-                    console.error(err);
-                    relevantIDs[match] = "unknown/nonexistent/private";
+            for (let match of matches) {
+                match = match.toUpperCase();
+                if (match in relevantIDs) {
                     continue;
                 }
-                if (match == channel) {
-                    match += " (current channel)";
+                if (match.startsWith("C") || match.startsWith("D")) {
+                    let result: ConversationsInfoResponse;
+                    try {
+                        result = await client.conversations.info({ channel: match });
+                    } catch (err) {
+                        console.error(err);
+                        relevantIDs[match] = "unknown/nonexistent/private";
+                        continue;
+                    }
+                    if (match == channel) {
+                        match += " (current channel)";
+                    }
+                    relevantIDs[match] = result.channel.name ?? "direct message";
+                    continue;
                 }
-                relevantIDs[match] = result.channel.name ?? "direct message";
-                continue;
+                let result: UsersInfoResponse;
+                try {
+                    result = await client.users.info({ user: match });
+                } catch (err) {
+                    console.error(err);
+                    relevantIDs[match] = "unknown/nonexistent";
+                    continue;
+                };
+                const profile = result.user.profile;
+                relevantIDs[match] = profile.display_name || profile.real_name;
             }
-            let result: UsersInfoResponse;
-            try {
-                result = await client.users.info({ user: match });
-            } catch (err) {
-                console.error(err);
-                relevantIDs[match] = "unknown/nonexistent";
-                continue;
-            };
-            const profile = result.user.profile;
-            relevantIDs[match] = profile.display_name || profile.real_name;
         }
     }
     console.log("Relevant IDs:", relevantIDs)
